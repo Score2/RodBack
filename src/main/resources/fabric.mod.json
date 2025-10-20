@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "rodback",
+  "version": "${version}",
+  "name": "Rod Back",
+  "description": "Automatically retracts fishing rod when the hook hits the ground or an entity",
+  "authors": [
+    "Insinuate"
+  ],
+  "contact": {
+    "homepage": "https://github.com/insinuate/rodback",
+    "sources": "https://github.com/insinuate/rodback"
+  },
+  "license": "MIT",
+  "icon": "assets/rodback/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      {
+        "adapter": "kotlin",
+        "value": "io.insinuate.fabric.rodback.RodBackClient"
+      }
+    ],
+    "modmenu": [
+      "io.insinuate.fabric.rodback.config.ModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "rodback.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-language-kotlin": ">=1.10.0",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "modmenu": "*"
+  }
+}
