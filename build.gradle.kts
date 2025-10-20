@@ -1,5 +1,5 @@
 plugins {
-    id("fabric-loom") version "1.6.12"
+    id("fabric-loom") version "1.7-SNAPSHOT" // 更新 Loom 版本
     id("maven-publish")
     kotlin("jvm") version "1.9.23"
 }
@@ -39,9 +39,7 @@ dependencies {
     modImplementation("com.terraformersmc:modmenu:${project.property("modmenu_version")}")
 
     // Cloth Config
-    modApi("me.shedaniel.cloth:cloth-config-fabric:${project.property("cloth_config_version")}") {
-        exclude(group = "net.fabricmc.fabric-api")
-    }
+    modApi("me.shedaniel.cloth:cloth-config-fabric:${project.property("cloth_config_version")}")
 }
 
 tasks.processResources {
@@ -52,22 +50,8 @@ tasks.processResources {
     }
 }
 
-tasks.withType<JavaCompile> {
-    options.encoding = "UTF-8"
-    options.release.set(17)
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-}
-
 java {
     withSourcesJar()
-
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
 }
 
 tasks.jar {
