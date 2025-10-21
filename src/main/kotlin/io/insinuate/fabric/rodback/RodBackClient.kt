@@ -3,10 +3,13 @@ package io.insinuate.fabric.rodback
 import io.insinuate.fabric.rodback.config.ModConfig
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
+import net.fabricmc.fabric.api.event.player.UseItemCallback
 import net.minecraft.client.MinecraftClient
 import net.minecraft.entity.projectile.FishingBobberEntity
 import net.minecraft.item.Items
+import net.minecraft.util.ActionResult
 import net.minecraft.util.Hand
+import net.minecraft.util.TypedActionResult
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
@@ -24,9 +27,24 @@ object RodBackClient : ClientModInitializer {
     private var slotSwitchTicksRemaining: Int = 0
 
     // Track protection period after recast
-    // Note: Protection period feature requires Mixin which has compatibility issues
-    // Keeping the config options but not implementing the blocking behavior for now
     private var protectionPeriodTicksRemaining: Int = 0
+
+    /**
+     * Check if currently in protection period (blocking manual retract)
+     */
+    fun isInProtectionPeriod(): Boolean {
+        return ModConfig.blockManualRetractAfterRecast && protectionPeriodTicksRemaining > 0
+    }
+
+    /**
+     * Start protection period after recast
+     */
+    fun startProtectionPeriod() {
+        if (ModConfig.blockManualRetractAfterRecast) {
+            protectionPeriodTicksRemaining = ModConfig.blockManualRetractTicks
+            LOGGER.info("Started protection period for ${ModConfig.blockManualRetractTicks} ticks")
+        }
+    }
 
     /**
      * Retract fishing rod by temporarily switching to another slot
@@ -56,6 +74,19 @@ object RodBackClient : ClientModInitializer {
         LOGGER.info("Mod enabled: ${ModConfig.modEnabled}")
         LOGGER.info("Auto-retract enabled: ${ModConfig.autoRetractEnabled}")
 
+        // Register use item callback to block manual retraction during protection period
+        UseItemCallback.EVENT.register { player, world, hand ->
+            val itemStack = player.getStackInHand(hand)
+
+            // Check if using fishing rod during protection period
+            if (itemStack.isOf(Items.FISHING_ROD) && isInProtectionPeriod()) {
+                LOGGER.info("Blocked manual fishing rod use during protection period (${protectionPeriodTicksRemaining} ticks remaining)")
+                TypedActionResult.fail(itemStack)
+            } else {
+                TypedActionResult.pass(itemStack)
+            }
+        }
+
         // Register client tick event
         ClientTickEvents.END_CLIENT_TICK.register { client ->
             // Check master toggle first
@@ -65,10 +96,13 @@ object RodBackClient : ClientModInitializer {
 
             val player = client.player ?: return@register
 
-            // Protection period countdown (feature disabled due to Mixin compatibility issues)
-            // if (protectionPeriodTicksRemaining > 0) {
-            //     protectionPeriodTicksRemaining--
-            // }
+            // Handle protection period countdown
+            if (protectionPeriodTicksRemaining > 0) {
+                protectionPeriodTicksRemaining--
+                if (protectionPeriodTicksRemaining == 0) {
+                    LOGGER.info("Protection period ended, manual retract now allowed")
+                }
+            }
 
             // Handle slot switching countdown
             if (isSlotSwitching && slotSwitchTicksRemaining > 0) {

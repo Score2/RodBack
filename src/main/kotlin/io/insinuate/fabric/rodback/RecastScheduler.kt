@@ -77,8 +77,8 @@ object RecastScheduler {
                     interactionManager.interactItem(player, hand)
                     LOGGER.info("Executed recast for player ${player.name.string}")
 
-                    // Protection period feature disabled due to Mixin compatibility issues
-                    // RodBackClient.startProtectionPeriod()
+                    // Start protection period after recast
+                    RodBackClient.startProtectionPeriod()
                 } else {
                     LOGGER.warn("Cannot recast: InteractionManager is null")
                 }

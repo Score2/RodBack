@@ -25,8 +25,8 @@
   "config.rodback.recast_on_server_remove.tooltip": "Automatically recast when the server removes the fish hook (some servers directly remove fishing bobber entities)",
   "config.rodback.recast_delay": "Recast Delay (ticks)",
   "config.rodback.recast_delay.tooltip": "Number of ticks to wait before recasting (1-20 ticks, 1 tick = ~50ms, default: 3)",
-  "config.rodback.block_manual_retract": "Block Manual Retract After Recast [DISABLED]",
-  "config.rodback.block_manual_retract.tooltip": "Feature temporarily disabled due to technical limitations. Will be implemented in a future update.",
-  "config.rodback.block_manual_retract_ticks": "Block Duration (ticks) [DISABLED]",
-  "config.rodback.block_manual_retract_ticks.tooltip": "Feature temporarily disabled due to technical limitations."
+  "config.rodback.block_manual_retract": "Block Manual Retract After Recast",
+  "config.rodback.block_manual_retract.tooltip": "Prevent manual retraction for a specified number of ticks after auto-recast to avoid accidental immediate retraction",
+  "config.rodback.block_manual_retract_ticks": "Block Duration (ticks)",
+  "config.rodback.block_manual_retract_ticks.tooltip": "How many ticks to block manual retraction after auto-recast (1-100 ticks, default: 10)"
 }
