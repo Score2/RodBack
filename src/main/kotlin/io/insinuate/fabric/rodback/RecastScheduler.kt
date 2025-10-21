@@ -74,8 +74,11 @@ object RecastScheduler {
                 val client = MinecraftClient.getInstance()
                 val interactionManager = client.interactionManager
                 if (interactionManager != null) {
+                    // Set RECASTING state to allow immediate recast without delay
+                    RodBackClient.setRecastingState()
+
                     interactionManager.interactItem(player, hand)
-                    LOGGER.info("Executed recast for player ${player.name.string}")
+                    LOGGER.info("Executed recast for player ${player.name.string}, state -> RECASTING")
 
                     // Start protection period after recast
                     RodBackClient.startProtectionPeriod()

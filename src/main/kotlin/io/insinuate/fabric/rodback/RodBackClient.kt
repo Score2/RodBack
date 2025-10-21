@@ -29,6 +29,19 @@ object RodBackClient : ClientModInitializer {
     // Track protection period after recast
     private var protectionPeriodTicksRemaining: Int = 0
 
+    // Track server delay handling
+    private enum class FishingState {
+        IDLE,           // No fishing rod in use, ready for any action
+        CASTING,        // Cast action sent, waiting for server to spawn bobber
+        ACTIVE,         // Bobber active and confirmed by server
+        RETRACTING,     // Retract action sent, waiting for server to remove bobber
+        RECASTING       // Recast scheduled/in progress, can proceed immediately
+    }
+
+    private var fishingState: FishingState = FishingState.IDLE
+    private var waitingForServerTicks: Int = 0
+    private const val MAX_SERVER_WAIT_TICKS: Int = 40 // 2 seconds timeout
+
     /**
      * Check if currently in protection period (blocking manual retract)
      */
@@ -44,6 +57,14 @@ object RodBackClient : ClientModInitializer {
             protectionPeriodTicksRemaining = ModConfig.blockManualRetractTicks
             LOGGER.info("Started protection period for ${ModConfig.blockManualRetractTicks} ticks")
         }
+    }
+
+    /**
+     * Set the fishing state to RECASTING (for scheduled recasts)
+     */
+    fun setRecastingState() {
+        fishingState = FishingState.RECASTING
+        waitingForServerTicks = 0
     }
 
     /**
@@ -75,16 +96,47 @@ object RodBackClient : ClientModInitializer {
         LOGGER.info("Auto-retract enabled: ${ModConfig.autoRetractEnabled}")
 
         // Register use item callback to block manual retraction during protection period
-        UseItemCallback.EVENT.register { player, world, hand ->
+        // and prevent repeated actions while waiting for server response
+        UseItemCallback.EVENT.register { player, _, hand ->
             val itemStack = player.getStackInHand(hand)
 
-            // Check if using fishing rod during protection period
-            if (itemStack.isOf(Items.FISHING_ROD) && isInProtectionPeriod()) {
-                LOGGER.info("Blocked manual fishing rod use during protection period (${protectionPeriodTicksRemaining} ticks remaining)")
-                TypedActionResult.fail(itemStack)
-            } else {
-                TypedActionResult.pass(itemStack)
+            // Only intercept fishing rod usage
+            if (!itemStack.isOf(Items.FISHING_ROD)) {
+                return@register TypedActionResult.pass(itemStack)
             }
+
+            // Block if in protection period
+            if (isInProtectionPeriod()) {
+                LOGGER.info("Blocked manual fishing rod use during protection period (${protectionPeriodTicksRemaining} ticks remaining)")
+                return@register TypedActionResult.fail(itemStack)
+            }
+
+            // Block if waiting for server response (except during recast which can proceed immediately)
+            if (fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) {
+                LOGGER.info("Blocked fishing rod use while waiting for server response (state: $fishingState, waiting: ${waitingForServerTicks} ticks)")
+                return@register TypedActionResult.fail(itemStack)
+            }
+
+            // Allow the action and update state
+            val hasBobber = player.fishHook != null
+            if (hasBobber) {
+                // Retracting
+                fishingState = FishingState.RETRACTING
+                waitingForServerTicks = 0
+                LOGGER.info("Player initiating retract, state -> RETRACTING")
+            } else {
+                // Casting (or recasting)
+                if (fishingState == FishingState.RECASTING) {
+                    // Recasting can proceed immediately without delay
+                    LOGGER.info("Player recasting, state -> CASTING (immediate)")
+                } else {
+                    LOGGER.info("Player initiating cast, state -> CASTING")
+                }
+                fishingState = FishingState.CASTING
+                waitingForServerTicks = 0
+            }
+
+            TypedActionResult.pass(itemStack)
         }
 
         // Register client tick event
@@ -104,6 +156,62 @@ object RodBackClient : ClientModInitializer {
                 }
             }
 
+            // Update fishing state based on server response
+            val currentBobber = player.fishHook
+            when (fishingState) {
+                FishingState.CASTING -> {
+                    if (currentBobber != null) {
+                        // Server confirmed bobber spawn
+                        fishingState = FishingState.ACTIVE
+                        waitingForServerTicks = 0
+                        LOGGER.info("Server confirmed bobber spawn, state -> ACTIVE")
+                    } else {
+                        waitingForServerTicks++
+                        if (waitingForServerTicks >= MAX_SERVER_WAIT_TICKS) {
+                            LOGGER.warn("Timeout waiting for bobber spawn, state -> IDLE")
+                            fishingState = FishingState.IDLE
+                            waitingForServerTicks = 0
+                        }
+                    }
+                }
+                FishingState.RETRACTING -> {
+                    if (currentBobber == null) {
+                        // Server confirmed bobber removal
+                        fishingState = FishingState.IDLE
+                        waitingForServerTicks = 0
+                        LOGGER.info("Server confirmed bobber removal, state -> IDLE")
+                    } else {
+                        waitingForServerTicks++
+                        if (waitingForServerTicks >= MAX_SERVER_WAIT_TICKS) {
+                            LOGGER.warn("Timeout waiting for bobber removal, state -> ACTIVE")
+                            fishingState = FishingState.ACTIVE
+                            waitingForServerTicks = 0
+                        }
+                    }
+                }
+                FishingState.ACTIVE -> {
+                    if (currentBobber == null) {
+                        // Bobber was removed (manual or server-side)
+                        fishingState = FishingState.IDLE
+                        LOGGER.info("Bobber removed unexpectedly, state -> IDLE")
+                    }
+                }
+                FishingState.RECASTING -> {
+                    // Recasting state is temporary, will transition via UseItemCallback
+                    if (currentBobber != null) {
+                        fishingState = FishingState.ACTIVE
+                        LOGGER.info("Recast complete, state -> ACTIVE")
+                    }
+                }
+                FishingState.IDLE -> {
+                    // Check if bobber appeared without us knowing (shouldn't happen normally)
+                    if (currentBobber != null) {
+                        fishingState = FishingState.ACTIVE
+                        LOGGER.info("Bobber detected while IDLE, state -> ACTIVE")
+                    }
+                }
+            }
+
             // Handle slot switching countdown
             if (isSlotSwitching && slotSwitchTicksRemaining > 0) {
                 slotSwitchTicksRemaining--
@@ -120,6 +228,11 @@ object RodBackClient : ClientModInitializer {
             }
 
             if (!ModConfig.autoRetractEnabled) {
+                return@register
+            }
+
+            // Don't auto-retract if we're waiting for server response
+            if (fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) {
                 return@register
             }
 
@@ -227,11 +340,15 @@ object RodBackClient : ClientModInitializer {
                 }
 
                 if (shouldRetract) {
+                    // Update state to RETRACTING
+                    fishingState = FishingState.RETRACTING
+                    waitingForServerTicks = 0
+
                     // Choose retract method based on config
                     if (ModConfig.useSlotSwitchRetract && hand == Hand.MAIN_HAND) {
                         // Use slot switching to avoid durability loss
                         retractBySlotSwitch(client)
-                        LOGGER.info("Auto-retracted fishing rod via slot switch (reason: $retractReason)")
+                        LOGGER.info("Auto-retracted fishing rod via slot switch (reason: $retractReason), state -> RETRACTING")
                         justRetracted = true
 
                         // Schedule recast if auto recast is enabled
@@ -243,7 +360,7 @@ object RodBackClient : ClientModInitializer {
                         val interactionManager = client.interactionManager
                         if (interactionManager != null) {
                             interactionManager.interactItem(player, hand)
-                            LOGGER.info("Auto-retracted fishing rod via interactItem (reason: $retractReason)")
+                            LOGGER.info("Auto-retracted fishing rod via interactItem (reason: $retractReason), state -> RETRACTING")
                             justRetracted = true
 
                             // Schedule recast if auto recast is enabled
@@ -252,6 +369,8 @@ object RodBackClient : ClientModInitializer {
                             }
                         } else {
                             LOGGER.warn("InteractionManager is null, cannot retract")
+                            // Reset state since retract failed
+                            fishingState = FishingState.ACTIVE
                         }
                     }
                 }
