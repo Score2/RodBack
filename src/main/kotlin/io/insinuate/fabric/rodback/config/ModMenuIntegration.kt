@@ -22,7 +22,20 @@ class ModMenuIntegration : ModMenuApi {
 
         val entryBuilder = builder.entryBuilder()
 
-        // General settings
+        // General settings - Master toggle first
+        general.addEntry(
+            entryBuilder.startBooleanToggle(
+                Text.translatable("config.rodback.mod_enabled"),
+                ModConfig.modEnabled
+            )
+                .setDefaultValue(true)
+                .setTooltip(Text.translatable("config.rodback.mod_enabled.tooltip"))
+                .setSaveConsumer { value ->
+                    ModConfig.setModEnabled(value)
+                }
+                .build()
+        )
+
         general.addEntry(
             entryBuilder.startBooleanToggle(
                 Text.translatable("config.rodback.auto_retract"),

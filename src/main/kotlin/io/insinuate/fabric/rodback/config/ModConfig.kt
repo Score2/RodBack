@@ -14,6 +14,9 @@ object ModConfig {
         .resolve("rodback.json")
         .toFile()
 
+    var modEnabled: Boolean = true
+        private set
+
     var autoRetractEnabled: Boolean = true
         private set
 
@@ -51,6 +54,7 @@ object ModConfig {
         private set
 
     data class ConfigData(
+        var modEnabled: Boolean = true,
         var autoRetractEnabled: Boolean = true,
         var retractOnGround: Boolean = true,
         var retractOnWall: Boolean = true,
@@ -74,6 +78,7 @@ object ModConfig {
         try {
             FileReader(configFile).use { reader ->
                 val data = gson.fromJson(reader, ConfigData::class.java)
+                modEnabled = data.modEnabled
                 autoRetractEnabled = data.autoRetractEnabled
                 retractOnGround = data.retractOnGround
                 retractOnWall = data.retractOnWall
@@ -98,6 +103,7 @@ object ModConfig {
             configFile.parentFile.mkdirs()
             FileWriter(configFile).use { writer ->
                 val data = ConfigData(
+                    modEnabled,
                     autoRetractEnabled,
                     retractOnGround,
                     retractOnWall,
@@ -116,6 +122,11 @@ object ModConfig {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    fun setModEnabled(enabled: Boolean) {
+        modEnabled = enabled
+        save()
     }
 
     fun setAutoRetract(enabled: Boolean) {

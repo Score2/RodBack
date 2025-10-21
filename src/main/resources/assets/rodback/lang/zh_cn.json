@@ -3,6 +3,8 @@
   "config.rodback.category.general": "通用设置",
   "config.rodback.category.retract": "收回条件",
   "config.rodback.category.recast": "重新抛出设置",
+  "config.rodback.mod_enabled": "启用模组",
+  "config.rodback.mod_enabled.tooltip": "启用/禁用所有模组功能的总开关",
   "config.rodback.auto_retract": "启用自动收回",
   "config.rodback.auto_retract.tooltip": "自动收回鱼竿的总开关",
   "config.rodback.use_slot_switch": "使用切换槽位方式",

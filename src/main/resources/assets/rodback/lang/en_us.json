@@ -3,6 +3,8 @@
   "config.rodback.category.general": "General Settings",
   "config.rodback.category.retract": "Retract Conditions",
   "config.rodback.category.recast": "Recast Settings",
+  "config.rodback.mod_enabled": "Enable Mod",
+  "config.rodback.mod_enabled.tooltip": "Master switch to enable/disable all mod features",
   "config.rodback.auto_retract": "Auto Retract Enabled",
   "config.rodback.auto_retract.tooltip": "Master switch for automatic fishing rod retraction",
   "config.rodback.use_slot_switch": "Use Slot Switch Method",

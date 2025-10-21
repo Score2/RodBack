@@ -53,10 +53,16 @@ object RodBackClient : ClientModInitializer {
     override fun onInitializeClient() {
         LOGGER.info("Initializing Rod Back client mod")
         ModConfig.load()
+        LOGGER.info("Mod enabled: ${ModConfig.modEnabled}")
         LOGGER.info("Auto-retract enabled: ${ModConfig.autoRetractEnabled}")
 
         // Register client tick event
         ClientTickEvents.END_CLIENT_TICK.register { client ->
+            // Check master toggle first
+            if (!ModConfig.modEnabled) {
+                return@register
+            }
+
             val player = client.player ?: return@register
 
             // Protection period countdown (feature disabled due to Mixin compatibility issues)
