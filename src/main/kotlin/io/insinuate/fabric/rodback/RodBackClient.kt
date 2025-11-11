@@ -43,6 +43,9 @@ object RodBackClient : ClientModInitializer {
     // Track protection period after recast
     private var protectionPeriodTicksRemaining: Int = 0
 
+    // Track if currently executing a scheduled recast (to bypass protection period)
+    private var isExecutingScheduledRecast: Boolean = false
+
     // Track server delay handling
     private enum class FishingState {
         IDLE,           // No fishing rod in use, ready for any action
@@ -79,6 +82,20 @@ object RodBackClient : ClientModInitializer {
     fun setRecastingState() {
         fishingState = FishingState.RECASTING
         waitingForServerTicks = 0
+    }
+
+    /**
+     * Mark that a scheduled recast is being executed (to bypass protection period)
+     */
+    fun beginScheduledRecast() {
+        isExecutingScheduledRecast = true
+    }
+
+    /**
+     * Mark that the scheduled recast execution is complete
+     */
+    fun endScheduledRecast() {
+        isExecutingScheduledRecast = false
     }
 
     /**
@@ -200,14 +217,15 @@ object RodBackClient : ClientModInitializer {
                 return@register TypedActionResult.pass(itemStack)
             }
 
-            // Block if in protection period
-            if (isInProtectionPeriod()) {
+            // Block if in protection period (but allow scheduled recasts to bypass)
+            if (isInProtectionPeriod() && !isExecutingScheduledRecast) {
                 LOGGER.info("Blocked manual fishing rod use during protection period (${protectionPeriodTicksRemaining} ticks remaining)")
                 return@register TypedActionResult.fail(itemStack)
             }
 
             // Block if waiting for server response (except during recast which can proceed immediately)
-            if (fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) {
+            // Also allow scheduled recasts to bypass this check
+            if ((fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) && !isExecutingScheduledRecast) {
                 LOGGER.info("Blocked fishing rod use while waiting for server response (state: $fishingState, waiting: ${waitingForServerTicks} ticks)")
                 return@register TypedActionResult.fail(itemStack)
             }
@@ -283,8 +301,16 @@ object RodBackClient : ClientModInitializer {
                     } else {
                         waitingForServerTicks++
                         if (waitingForServerTicks >= MAX_SERVER_WAIT_TICKS) {
-                            LOGGER.warn("Timeout waiting for bobber removal, state -> ACTIVE")
-                            fishingState = FishingState.ACTIVE
+                            // Timeout - check if we have pending recast
+                            if (RecastScheduler.hasPendingRecast(player)) {
+                                // Have pending recast, assume bobber will be removed and go to IDLE
+                                LOGGER.warn("Timeout waiting for bobber removal (with pending recast), forcing state -> IDLE")
+                                fishingState = FishingState.IDLE
+                            } else {
+                                // No pending recast, bobber is likely still active
+                                LOGGER.warn("Timeout waiting for bobber removal, state -> ACTIVE")
+                                fishingState = FishingState.ACTIVE
+                            }
                             waitingForServerTicks = 0
                         }
                     }
@@ -440,13 +466,13 @@ object RodBackClient : ClientModInitializer {
                 }
 
                 if (shouldRetract) {
-                    // Update state to RETRACTING
-                    fishingState = FishingState.RETRACTING
-                    waitingForServerTicks = 0
-
                     // Choose retract method based on config
                     if (ModConfig.useSlotSwitchRetract && hand == Hand.MAIN_HAND) {
                         // Use slot switching to avoid durability loss
+                        // For slot switch, manually set state since UseItemCallback won't be triggered
+                        fishingState = FishingState.RETRACTING
+                        waitingForServerTicks = 0
+
                         retractBySlotSwitch(client)
                         LOGGER.info("Auto-retracted fishing rod via slot switch (reason: $retractReason), state -> RETRACTING")
                         justRetracted = true
@@ -457,10 +483,12 @@ object RodBackClient : ClientModInitializer {
                         }
                     } else {
                         // Use normal right-click method (consumes durability)
+                        // Don't set state before calling interactItem - let UseItemCallback handle it
                         val interactionManager = client.interactionManager
                         if (interactionManager != null) {
+                            // interactItem will trigger UseItemCallback which updates state to RETRACTING
                             interactionManager.interactItem(player, hand)
-                            LOGGER.info("Auto-retracted fishing rod via interactItem (reason: $retractReason), state -> RETRACTING")
+                            LOGGER.info("Auto-retracted fishing rod via interactItem (reason: $retractReason)")
                             justRetracted = true
 
                             // Schedule recast if auto recast is enabled
@@ -469,8 +497,6 @@ object RodBackClient : ClientModInitializer {
                             }
                         } else {
                             LOGGER.warn("InteractionManager is null, cannot retract")
-                            // Reset state since retract failed
-                            fishingState = FishingState.ACTIVE
                         }
                     }
                 }
