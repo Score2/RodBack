@@ -105,6 +105,7 @@ object RodBackClient : ClientModInitializer {
 
     /**
      * Handle quick cast keybinding - find fishing rod in hotbar and cast it
+     * If already holding a fishing rod with a bobber, retract and recast
      */
     private fun handleQuickCast(client: MinecraftClient) {
         val player = client.player ?: return
@@ -116,7 +117,42 @@ object RodBackClient : ClientModInitializer {
             return
         }
 
-        // Find fishing rod in hotbar (slots 0-8)
+        val currentSlot = inventory.selectedSlot
+        val currentStack = inventory.getStack(currentSlot)
+
+        // Check if currently holding a fishing rod
+        if (currentStack.isOf(Items.FISHING_ROD)) {
+            val hasBobber = player.fishHook != null
+            val interactionManager = client.interactionManager
+
+            if (interactionManager != null) {
+                val hand = Hand.MAIN_HAND
+
+                if (hasBobber) {
+                    // Already has bobber out, retract it first and schedule recast
+                    interactionManager.interactItem(player, hand)
+                    LOGGER.info("Quick cast: retracting existing bobber for recast")
+
+                    // Update state to RETRACTING
+                    fishingState = FishingState.RETRACTING
+                    waitingForServerTicks = 0
+
+                    // Schedule immediate recast (1 tick delay to ensure retract completes)
+                    RecastScheduler.scheduleRecast(player, delayTicks = 1)
+                } else {
+                    // No bobber, just cast
+                    interactionManager.interactItem(player, hand)
+                    LOGGER.info("Quick cast: casting fishing rod from current hand")
+
+                    // Update state
+                    fishingState = FishingState.CASTING
+                    waitingForServerTicks = 0
+                }
+            }
+            return
+        }
+
+        // Not holding fishing rod, find it in hotbar (slots 0-8)
         var rodSlot = -1
         for (i in 0..8) {
             val stack = inventory.getStack(i)
@@ -131,43 +167,20 @@ object RodBackClient : ClientModInitializer {
             return
         }
 
-        // If already holding fishing rod in the found slot
-        val currentSlot = inventory.selectedSlot
-        if (currentSlot == rodSlot) {
-            // Just cast it
-            val interactionManager = client.interactionManager
-            if (interactionManager != null) {
-                val hand = Hand.MAIN_HAND
-                interactionManager.interactItem(player, hand)
-                LOGGER.info("Quick cast: casting fishing rod from current slot $rodSlot")
+        // Switch to fishing rod slot
+        inventory.selectedSlot = rodSlot
+        LOGGER.info("Quick cast: switched to fishing rod in slot $rodSlot")
 
-                // Update state
-                val hasBobber = player.fishHook != null
-                if (hasBobber) {
-                    fishingState = FishingState.RETRACTING
-                    LOGGER.info("Quick cast: retracting bobber")
-                } else {
-                    fishingState = FishingState.CASTING
-                    LOGGER.info("Quick cast: casting bobber")
-                }
-                waitingForServerTicks = 0
-            }
-        } else {
-            // Switch to fishing rod slot and cast
-            inventory.selectedSlot = rodSlot
-            LOGGER.info("Quick cast: switched to fishing rod in slot $rodSlot")
+        // Cast the fishing rod (note: bobber cannot exist if we just switched)
+        val interactionManager = client.interactionManager
+        if (interactionManager != null) {
+            val hand = Hand.MAIN_HAND
+            interactionManager.interactItem(player, hand)
+            LOGGER.info("Quick cast: casting fishing rod after slot switch")
 
-            // Cast the fishing rod
-            val interactionManager = client.interactionManager
-            if (interactionManager != null) {
-                val hand = Hand.MAIN_HAND
-                interactionManager.interactItem(player, hand)
-                LOGGER.info("Quick cast: casting fishing rod after slot switch")
-
-                // Update state
-                fishingState = FishingState.CASTING
-                waitingForServerTicks = 0
-            }
+            // Update state
+            fishingState = FishingState.CASTING
+            waitingForServerTicks = 0
         }
     }
 
