@@ -28,5 +28,8 @@
   "config.rodback.block_manual_retract": "抛出后阻止手动收回",
   "config.rodback.block_manual_retract.tooltip": "在自动抛出后的指定刻数内阻止手动收回鱼竿，避免意外立即收回",
   "config.rodback.block_manual_retract_ticks": "阻止时长（刻）",
-  "config.rodback.block_manual_retract_ticks.tooltip": "自动抛出后阻止手动收回的刻数（1-100刻，默认：10）"
+  "config.rodback.block_manual_retract_ticks.tooltip": "自动抛出后阻止手动收回的刻数（1-100刻，默认：10）",
+
+  "category.rodback.keybindings": "Rod Back",
+  "key.rodback.quick_cast": "快速抛出鱼钩"
 }

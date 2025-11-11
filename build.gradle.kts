@@ -51,7 +51,17 @@ tasks.processResources {
 }
 
 java {
+    // Set Java 21 as source and target for 1.20.5-1.20.6 compatibility
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+
     withSourcesJar()
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+    kotlinOptions {
+        jvmTarget = "21"
+    }
 }
 
 tasks.jar {

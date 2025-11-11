@@ -3,19 +3,33 @@ package io.insinuate.fabric.rodback
 import io.insinuate.fabric.rodback.config.ModConfig
 import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.fabricmc.fabric.api.event.player.UseItemCallback
 import net.minecraft.client.MinecraftClient
+import net.minecraft.client.option.KeyBinding
+import net.minecraft.client.util.InputUtil
 import net.minecraft.entity.projectile.FishingBobberEntity
 import net.minecraft.item.Items
 import net.minecraft.util.ActionResult
 import net.minecraft.util.Hand
 import net.minecraft.util.TypedActionResult
+import org.lwjgl.glfw.GLFW
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 object RodBackClient : ClientModInitializer {
     const val MOD_ID = "rodback"
     val LOGGER: Logger = LoggerFactory.getLogger(MOD_ID)
+
+    // Keybinding for quick fishing rod cast
+    private val quickCastKey: KeyBinding = KeyBindingHelper.registerKeyBinding(
+        KeyBinding(
+            "key.rodback.quick_cast",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_R,
+            "category.rodback.keybindings"
+        )
+    )
 
     // Track previous fish hook state to detect server-side removal
     private var previousFishHook: FishingBobberEntity? = null
@@ -89,6 +103,74 @@ object RodBackClient : ClientModInitializer {
         LOGGER.info("Switched from slot $originalSlot to slot $targetSlot to retract without durability loss")
     }
 
+    /**
+     * Handle quick cast keybinding - find fishing rod in hotbar and cast it
+     */
+    private fun handleQuickCast(client: MinecraftClient) {
+        val player = client.player ?: return
+        val inventory = player.inventory
+
+        // Don't quick cast if waiting for server response
+        if (fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) {
+            LOGGER.info("Quick cast blocked: waiting for server response (state: $fishingState)")
+            return
+        }
+
+        // Find fishing rod in hotbar (slots 0-8)
+        var rodSlot = -1
+        for (i in 0..8) {
+            val stack = inventory.getStack(i)
+            if (stack.isOf(Items.FISHING_ROD)) {
+                rodSlot = i
+                break
+            }
+        }
+
+        if (rodSlot == -1) {
+            LOGGER.info("Quick cast failed: no fishing rod found in hotbar")
+            return
+        }
+
+        // If already holding fishing rod in the found slot
+        val currentSlot = inventory.selectedSlot
+        if (currentSlot == rodSlot) {
+            // Just cast it
+            val interactionManager = client.interactionManager
+            if (interactionManager != null) {
+                val hand = Hand.MAIN_HAND
+                interactionManager.interactItem(player, hand)
+                LOGGER.info("Quick cast: casting fishing rod from current slot $rodSlot")
+
+                // Update state
+                val hasBobber = player.fishHook != null
+                if (hasBobber) {
+                    fishingState = FishingState.RETRACTING
+                    LOGGER.info("Quick cast: retracting bobber")
+                } else {
+                    fishingState = FishingState.CASTING
+                    LOGGER.info("Quick cast: casting bobber")
+                }
+                waitingForServerTicks = 0
+            }
+        } else {
+            // Switch to fishing rod slot and cast
+            inventory.selectedSlot = rodSlot
+            LOGGER.info("Quick cast: switched to fishing rod in slot $rodSlot")
+
+            // Cast the fishing rod
+            val interactionManager = client.interactionManager
+            if (interactionManager != null) {
+                val hand = Hand.MAIN_HAND
+                interactionManager.interactItem(player, hand)
+                LOGGER.info("Quick cast: casting fishing rod after slot switch")
+
+                // Update state
+                fishingState = FishingState.CASTING
+                waitingForServerTicks = 0
+            }
+        }
+    }
+
     override fun onInitializeClient() {
         LOGGER.info("Initializing Rod Back client mod")
         ModConfig.load()
@@ -147,6 +229,11 @@ object RodBackClient : ClientModInitializer {
             }
 
             val player = client.player ?: return@register
+
+            // Handle quick cast keybinding
+            if (quickCastKey.wasPressed()) {
+                handleQuickCast(client)
+            }
 
             // Handle protection period countdown
             if (protectionPeriodTicksRemaining > 0) {

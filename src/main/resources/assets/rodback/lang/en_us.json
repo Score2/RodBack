@@ -28,5 +28,8 @@
   "config.rodback.block_manual_retract": "Block Manual Retract After Recast",
   "config.rodback.block_manual_retract.tooltip": "Prevent manual retraction for a specified number of ticks after auto-recast to avoid accidental immediate retraction",
   "config.rodback.block_manual_retract_ticks": "Block Duration (ticks)",
-  "config.rodback.block_manual_retract_ticks.tooltip": "How many ticks to block manual retraction after auto-recast (1-100 ticks, default: 10)"
+  "config.rodback.block_manual_retract_ticks.tooltip": "How many ticks to block manual retraction after auto-recast (1-100 ticks, default: 10)",
+
+  "category.rodback.keybindings": "Rod Back",
+  "key.rodback.quick_cast": "Quick Cast Fishing Rod"
 }
