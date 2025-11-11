@@ -128,9 +128,16 @@ object RodBackClient : ClientModInitializer {
         val player = client.player ?: return
         val inventory = player.inventory
 
-        // Don't quick cast if waiting for server response
+        // Check if stuck in waiting state for too long (more than 1 second)
+        if ((fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) && waitingForServerTicks > 20) {
+            LOGGER.warn("Quick cast: stuck in state $fishingState for ${waitingForServerTicks} ticks, forcing reset")
+            fishingState = FishingState.IDLE
+            waitingForServerTicks = 0
+        }
+
+        // Don't quick cast if waiting for server response (unless stuck was reset above)
         if (fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) {
-            LOGGER.info("Quick cast blocked: waiting for server response (state: $fishingState)")
+            LOGGER.info("Quick cast blocked: waiting for server response (state: $fishingState, ticks: ${waitingForServerTicks})")
             return
         }
 
@@ -147,23 +154,17 @@ object RodBackClient : ClientModInitializer {
 
                 if (hasBobber) {
                     // Already has bobber out, retract it first and schedule recast
+                    // Don't set state here - let UseItemCallback handle it
                     interactionManager.interactItem(player, hand)
                     LOGGER.info("Quick cast: retracting existing bobber for recast")
-
-                    // Update state to RETRACTING
-                    fishingState = FishingState.RETRACTING
-                    waitingForServerTicks = 0
 
                     // Schedule immediate recast (1 tick delay to ensure retract completes)
                     RecastScheduler.scheduleRecast(player, delayTicks = 1)
                 } else {
                     // No bobber, just cast
+                    // Don't set state here - let UseItemCallback handle it
                     interactionManager.interactItem(player, hand)
                     LOGGER.info("Quick cast: casting fishing rod from current hand")
-
-                    // Update state
-                    fishingState = FishingState.CASTING
-                    waitingForServerTicks = 0
                 }
             }
             return
@@ -217,21 +218,40 @@ object RodBackClient : ClientModInitializer {
                 return@register TypedActionResult.pass(itemStack)
             }
 
+            // Check if stuck in waiting state for too long (force reset if over 1 second)
+            if ((fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) && waitingForServerTicks > 20 && !isExecutingScheduledRecast) {
+                LOGGER.warn("UseItemCallback: stuck in state $fishingState for $waitingForServerTicks ticks, forcing reset")
+                fishingState = FishingState.IDLE
+                waitingForServerTicks = 0
+                // Cancel any pending recast to avoid confusion
+                RecastScheduler.cancelRecast(player)
+            }
+
             // Block if in protection period (but allow scheduled recasts to bypass)
             if (isInProtectionPeriod() && !isExecutingScheduledRecast) {
-                LOGGER.info("Blocked manual fishing rod use during protection period (${protectionPeriodTicksRemaining} ticks remaining)")
+                LOGGER.info("Blocked manual fishing rod use during protection period ($protectionPeriodTicksRemaining ticks remaining)")
                 return@register TypedActionResult.fail(itemStack)
             }
 
             // Block if waiting for server response (except during recast which can proceed immediately)
             // Also allow scheduled recasts to bypass this check
             if ((fishingState == FishingState.CASTING || fishingState == FishingState.RETRACTING) && !isExecutingScheduledRecast) {
-                LOGGER.info("Blocked fishing rod use while waiting for server response (state: $fishingState, waiting: ${waitingForServerTicks} ticks)")
+                LOGGER.info("Blocked fishing rod use while waiting for server response (state: $fishingState, waiting: $waitingForServerTicks ticks)")
                 return@register TypedActionResult.fail(itemStack)
             }
 
             // Allow the action and update state
             val hasBobber = player.fishHook != null
+
+            // Safety check: if state doesn't match reality, force sync
+            if (hasBobber && fishingState == FishingState.IDLE) {
+                LOGGER.info("Syncing state: bobber exists but state was IDLE, correcting to ACTIVE")
+                fishingState = FishingState.ACTIVE
+            } else if (!hasBobber && (fishingState == FishingState.ACTIVE || fishingState == FishingState.RETRACTING)) {
+                LOGGER.info("Syncing state: no bobber but state was ${fishingState}, correcting to IDLE")
+                fishingState = FishingState.IDLE
+            }
+
             if (hasBobber) {
                 // Retracting
                 fishingState = FishingState.RETRACTING
